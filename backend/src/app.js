@@ -3,14 +3,58 @@ const pool = require("../model/db");
 const bcrypt = require("bcrypt");
 const swaggerUi = require("swagger-ui-express");
 const swaggerSpec = require("../swagger");
-
+const cors = require('cors');
+const passport = require("./passport");
+const session = require("express-session");
+const { check, validationResult } = require("express-validator");
+const dotenv = require("dotenv");
+dotenv.config();
+const Stripe = require("stripe");
+const stripe = new Stripe(process.env.STRIPE_KEY);
 
 const app = express();
+
 
 // Midelware
 app.use(express.json());
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+app.use(cors({
+  origin: 'http://localhost:5173',
+  credentials: true,
+}));
 
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'secret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    httpOnly: true,
+    sameSite: 'lax',
+    secure: false,
+  }
+}))
+app.use(passport.initialize());
+app.use(passport.session());
+
+
+const handleValidation = (req, res, next) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ error: errors.array() });
+  }
+  next();
+}
+
+const registerValidation = [
+  check("name").trim().notEmpty().withMessage("name is required"),
+  check("email").trim().isEmail().withMessage("valid email is required"),
+  check("password").isLength({ min: 8 }).withMessage("password must be at least 8 characters"),
+];
+
+const loginValidation = [
+  check("email").trim().isEmail().withMessage("valid email is required"),
+  check("password").notEmpty().withMessage("password is required"),
+];
 
 //Test route
 /**
@@ -24,7 +68,7 @@ app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
  *         description: API is running
  */
 app.get("/", (req, res) => {
-    res.json({ message: "API is running" });
+  res.json({ message: "API is running" });
 });
 
 // Test route to check DB connection
@@ -41,13 +85,50 @@ app.get("/", (req, res) => {
  *         description: Database connection failed
  */
 app.get("/db-test", async (req, res) => {
-    try {
-        const result = await pool.query("SELECT NOW() AS now");
-        res.json({ ok: true, time: result.rows[0].now });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ ok: false, error: "Failed to connect to DB" });
+  try {
+    const result = await pool.query("SELECT NOW() AS now");
+    res.json({ ok: true, time: result.rows[0].now });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ ok: false, error: "Failed to connect to DB" });
+  }
+});
+
+// Routes
+//Payment endpoint
+app.post("/payments/create-intent/:userId", async (req, res) => {
+  try {
+    const { userId } = req.params;
+
+    const itemResult = await pool.query(
+      'SELECT cp.quantity, cp.unit_price FROM carts c JOIN cart_products cp ON cp.cart_id = c.id WHERE c.user_id = $1',
+      [userId]
+    );
+
+    if (itemResult.rows.length === 0) {
+      return res.status(400).json({ error: "cart is empty" });
     }
+
+    const amount = itemResult.rows.reduce((total, item) => {
+      return total + item.quantity * item.unit_price;
+    }, 0);
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(amount * 100),
+      currency: 'usd',
+      automatic_payment_methods: { enabled: true },
+      metadata: { userId: String(userId) },
+    });
+
+    return res.status(200).json({
+      clientSecret: paymentIntent.client_secret,
+      amount: amount,
+    });
+
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "server error" });
+  }
 });
 
 // Authentication endpoints
@@ -92,32 +173,32 @@ app.get("/db-test", async (req, res) => {
  *       500:
  *         description: Server error
  */
-app.post("/auth/register", async (req, res) => {
-    try {
-        const { name, email, password, address } = req.body;
-        const existingUser = await pool.query(
-            `SELECT id FROM USERS WHERE email = $1`,
-            [email]
-        );
+app.post("/auth/register", registerValidation, handleValidation, async (req, res) => {
+  try {
+    const { name, email, password, address } = req.body;
+    const existingUser = await pool.query(
+      `SELECT id FROM USERS WHERE email = $1`,
+      [email]
+    );
 
-        if (existingUser.rows.length > 0) {
-            res.status(400).json({ error: "Email already in use" })
-        }
+    if (existingUser.rows.length > 0) {
+      return res.status(409).json({ error: "Email already in use" });
+    }
 
-        const password_hash = await bcrypt.hash(password, 10);
+    const password_hash = await bcrypt.hash(password, 10);
 
-        const result = await pool.query(
-            `INSERT INTO users (name, email, password_hash, address) 
+    const result = await pool.query(
+      `INSERT INTO users (name, email, password_hash, address) 
             VALUES ($1, $2, $3, $4)
             RETURNING id, name, email, address, created_at`,
-            [name, email, password_hash, address || null]
-        );
+      [name, email, password_hash, address || null]
+    );
 
-        return res.status(200).json(result.rows[0]);
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({ error: "server error" });
-    }
+    return res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "server error" });
+  }
 });
 
 // Login 
@@ -151,38 +232,42 @@ app.post("/auth/register", async (req, res) => {
  *       500:
  *         description: Server error
  */
-app.post('/auth/login', async (req, res) => {
-    try {
-        const { email, password } = req.body;
-        const result = await pool.query(
-            `SELECT id, name, email, address, created_at, password_hash FROM users WHERE email = $1`,
-            [email]
-        );
-
-        if (result.rows[0] === 0) {
-            return res.status(400).json({ error: "User not found" });
-        }
-
-        const user = result.rows[0];
-        const isMatch = await bcrypt.compare(password, user.password_hash);
-
-        if (isMatch) {
-            return res.status(200).json({
-                id: user.id,
-                name: user.name,
-                email: user.email,
-                address: user.address,
-                created_at: user.created_at,
-            });
-        } else {
-            return res.status(400).json({ error: "Password doesn't match" });
-        }
-
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({ error: "server error" });
+app.post('/auth/login', loginValidation, handleValidation, async (req, res, next) => {
+  passport.authenticate("local", (err, user, info) => {
+    if (err) return next(err);
+    if (!user) {
+      return res.status(401).json({ error: info?.message || "Invalid credentials" });
     }
+
+    req.logIn(user, (loginErr) => {
+      if (loginErr) return next(loginErr);
+      return res.status(200).json({
+        message: 'login succesfull',
+        user,
+      });
+    });
+  })(req, res, next);
 });
+
+app.get("/auth/me", (req, res) => {
+  if (!req.isAuthenticated || !req.isAuthenticated()) {
+    return res.status(401).json({ error: "Not authenticated" });
+  }
+  return res.status(200).json(req.user);
+});
+
+app.post("/auth/logout", (req, res, next) => {
+  req.logout((err) => {
+    if (err) return next(err);
+
+    req.session.destroy((destroyErr) => {
+      if (destroyErr) return next(destroyErr);
+      res.clearCookie("connect.sid");
+      return res.status(200).json({ message: "logout successful" });
+    });
+  });
+});
+
 
 // User endpoints
 /**
@@ -206,23 +291,23 @@ app.post('/auth/login', async (req, res) => {
  *         description: Server error
  */
 app.get("/users/:id", async (req, res) => {
-    try {
-        const { id } = req.params;
-        const result = await pool.query(
-            "SELECT id, name, email, address, created_at FROM users WHERE id = $1",
-            [id]
-        );
+  try {
+    const { id } = req.params;
+    const result = await pool.query(
+      "SELECT id, name, email, address, created_at FROM users WHERE id = $1",
+      [id]
+    );
 
-        if (result.rows.length === 0) {
-            return res.status(400).json({ error: "User not found" });
-        }
-
-        return res.status(200).json(result.rows[0]);
-
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ ok: false, error: "Failed to get user by ID" });
+    if (result.rows.length === 0) {
+      return res.status(400).json({ error: "User not found" });
     }
+
+    return res.status(200).json(result.rows[0]);
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ ok: false, error: "Failed to get user by ID" });
+  }
 });
 
 /**
@@ -262,27 +347,27 @@ app.get("/users/:id", async (req, res) => {
  *         description: Server error
  */
 app.put("/users/:id", async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { name, email, address } = req.body;
+  try {
+    const { id } = req.params;
+    const { name, email, address } = req.body;
 
-        const result = await pool.query(
-            `UPDATE users
+    const result = await pool.query(
+      `UPDATE users
             SET name = $1, email = $2, address = $3
             WHERE id = $4
             RETURNING id, name, email, address, created_at`,
-            [name, email, address, id]
-        );
+      [name, email, address, id]
+    );
 
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: "could not perform action" });
-        }
-
-        return res.status(200).json(result.rows[0]);
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({ message: "server error" });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "could not perform action" });
     }
+
+    return res.status(200).json(result.rows[0]);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "server error" });
+  }
 });
 
 /**
@@ -306,23 +391,23 @@ app.put("/users/:id", async (req, res) => {
  *         description: Server error
  */
 app.delete("/users/:id", async (req, res) => {
-    try {
-        const { id } = req.params;
+  try {
+    const { id } = req.params;
 
-        const result = await pool.query(
-            "DELETE FROM users WHERE id = $1 RETURNING id",
-            [id]
-        );
+    const result = await pool.query(
+      "DELETE FROM users WHERE id = $1 RETURNING id",
+      [id]
+    );
 
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: "user not found" });
-        }
-
-        return res.status(200).json({ message: "user deleted" });
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({ error: "server error" });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "user not found" });
     }
+
+    return res.status(200).json({ message: "user deleted" });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "server error" });
+  }
 });
 
 // Product endpoints
@@ -339,17 +424,17 @@ app.delete("/users/:id", async (req, res) => {
  *         description: Server error
  */
 app.get('/products', async (req, res) => {
-    try {
-        const result = await pool.query("SELECT id, name, price, stock_quantity FROM products");
-        if (result.rows.length === 0) {
-            return res.status(200).json([]);
-        }
-
-        return res.status(200).json(result.rows);
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({ error: "server error" });
+  try {
+    const result = await pool.query("SELECT id, name, price, stock_quantity FROM products");
+    if (result.rows.length === 0) {
+      return res.status(200).json([]);
     }
+
+    return res.status(200).json(result.rows);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "server error" });
+  }
 });
 
 /**
@@ -373,20 +458,20 @@ app.get('/products', async (req, res) => {
  *         description: Server error
  */
 app.get('/products/:id', async (req, res) => {
-    try {
-        const { id } = req.params;
-        const result = await pool.query("SELECT id, name, price, stock_quantity FROM products WHERE id = $1",
-            [id]
-        );
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: "product not found" });
-        }
-
-        return res.status(200).json(result.rows[0]);
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({ error: "server error" });
+  try {
+    const { id } = req.params;
+    const result = await pool.query("SELECT id, name, price, stock_quantity FROM products WHERE id = $1",
+      [id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "product not found" });
     }
+
+    return res.status(200).json(result.rows[0]);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "server error" });
+  }
 });
 
 /**
@@ -418,20 +503,20 @@ app.get('/products/:id', async (req, res) => {
  *         description: Server error
  */
 app.post('/products', async (req, res) => {
-    try {
-        const { name, price, stock_quantity } = req.body;
-        const result = await pool.query(
-            `INSERT INTO products (name, price, stock_quantity) 
+  try {
+    const { name, price, stock_quantity } = req.body;
+    const result = await pool.query(
+      `INSERT INTO products (name, price, stock_quantity) 
             VALUES ($1, $2, $3)
             RETURNING id, name, price, stock_quantity`,
-            [name, price, stock_quantity]
-        );
+      [name, price, stock_quantity]
+    );
 
-        return res.status(200).json(result.rows[0]);
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({ error: "server error" });
-    }
+    return res.status(200).json(result.rows[0]);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "server error" });
+  }
 });
 
 /**
@@ -468,27 +553,27 @@ app.post('/products', async (req, res) => {
  *         description: Server error
  */
 app.put("/products/:id", async (req, res) => {
-    try {
-        const { id } = req.params;
-        const { name, price, stock_quantity } = req.body;
+  try {
+    const { id } = req.params;
+    const { name, price, stock_quantity } = req.body;
 
-        const result = await pool.query(
-            `UPDATE products
+    const result = await pool.query(
+      `UPDATE products
             SET name = $1, price = $2, stock_quantity = $3
             WHERE id = $4
             RETURNING id, name, price, stock_quantity`,
-            [name, price, stock_quantity, id]
-        );
+      [name, price, stock_quantity, id]
+    );
 
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: "could not perform action" });
-        }
-
-        return res.status(200).json(result.rows[0]);
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({ message: "server error" });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "could not perform action" });
     }
+
+    return res.status(200).json(result.rows[0]);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ message: "server error" });
+  }
 });
 
 /**
@@ -512,23 +597,23 @@ app.put("/products/:id", async (req, res) => {
  *         description: Server error
  */
 app.delete("/products/:id", async (req, res) => {
-    try {
-        const { id } = req.params;
+  try {
+    const { id } = req.params;
 
-        const result = await pool.query(
-            "DELETE FROM products WHERE id = $1 RETURNING id",
-            [id]
-        );
+    const result = await pool.query(
+      "DELETE FROM products WHERE id = $1 RETURNING id",
+      [id]
+    );
 
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: "product not found" });
-        }
-
-        return res.status(200).json({ message: "product deleted" });
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({ error: "server error" });
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: "product not found" });
     }
+
+    return res.status(200).json({ message: "product deleted" });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "server error" });
+  }
 });
 
 // Cart endpoints
@@ -553,22 +638,22 @@ app.delete("/products/:id", async (req, res) => {
  *         description: Server error
  */
 app.get("/carts/:userId", async (req, res) => {
-    try {
-        const { userId } = req.params;
+  try {
+    const { userId } = req.params;
 
-        const cartResult = await pool.query(
-            "SELECT id, user_id, created_at FROM carts WHERE user_id = $1",
-            [userId]
-        );
+    const cartResult = await pool.query(
+      "SELECT id, user_id, created_at FROM carts WHERE user_id = $1",
+      [userId]
+    );
 
-        if (cartResult.rows.length === 0) {
-            return res.status(404).json({ error: "cart not found" });
-        }
+    if (cartResult.rows.length === 0) {
+      return res.status(404).json({ error: "cart not found" });
+    }
 
-        const cart = cartResult.rows[0];
+    const cart = cartResult.rows[0];
 
-        const itemsResult = await pool.query(
-            `SELECT 
+    const itemsResult = await pool.query(
+      `SELECT 
             cp.product_id,
             p.name,
             cp.quantity,
@@ -578,21 +663,21 @@ app.get("/carts/:userId", async (req, res) => {
             JOIN products p ON p.id = cp.product_id
             WHERE cp.cart_id = $1
             ORDER BY cp.id`,
-            [cart.id]
-        );
+      [cart.id]
+    );
 
-        return res.status(200).json({
-            cart: {
-                id: cart.id,
-                user_id: cart.user_id,
-                created_at: cart.created_at
-            },
-            items: itemsResult.rows
-        });
-    } catch (error) {
-        console.error(error);
-        return res.status(500).json({ error: "server error" });
-    }
+    return res.status(200).json({
+      cart: {
+        id: cart.id,
+        user_id: cart.user_id,
+        created_at: cart.created_at
+      },
+      items: itemsResult.rows
+    });
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "server error" });
+  }
 });
 
 /**
@@ -942,6 +1027,64 @@ app.get("/orders/:id", async (req, res) => {
 
 /**
  * @swagger
+ * /orders/me:
+ *   get:
+ *     summary: Get order history for the authenticated user
+ *     tags: [Orders]
+ *     responses:
+ *       200:
+ *         description: User orders retrieved successfully
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: array
+ *               items:
+ *                 type: object
+ *                 properties:
+ *                   id:
+ *                     type: integer
+ *                     example: 12
+ *                   user_id:
+ *                     type: integer
+ *                     example: 7
+ *                   status:
+ *                     type: string
+ *                     example: placed
+ *                   total_amount:
+ *                     type: number
+ *                     format: float
+ *                     example: 149.97
+ *                   created_at:
+ *                     type: string
+ *                     format: date-time
+ *                     example: 2026-02-25T18:22:31.000Z
+ *       401:
+ *         description: Not authenticated
+ *       500:
+ *         description: Server error
+ */
+app.get("/orders/users/:userId", async (req, res) => {
+  const { userId } = req.params;
+  try {
+    if (!req.isAuthenticated || !req.isAuthenticated()) {
+      return res.status(401).json({ error: "Not authenticated" });
+    }
+
+    const result = await pool.query(
+      `SELECT id, user_id, status, total_amount, created_at FROM orders WHERE user_id = $1 ORDER BY created_at DESC`,
+      [userId]
+    );
+
+    return res.status(200).json(result.rows);
+  } catch (error) {
+    console.error(error);
+    return res.status(500).json({ error: "server error" });
+  }
+});
+
+
+/**
+ * @swagger
  * /orders:
  *   post:
  *     summary: Create a new order
@@ -1226,9 +1369,20 @@ app.post("/checkout/:userId", async (req, res) => {
       order,
     });
   } catch (error) {
-    await client.query("ROLLBACK");
-    console.error(error);
-    return res.status(500).json({ error: "server error" });
+    // await client.query("ROLLBACK");
+    // console.error(error);
+    // return res.status(500).json({ error: "server error" });
+
+    try { await client.query("ROLLBACK"); } catch (_) { }
+    console.error("checkout error:", error);
+    return res.status(500).json({
+      error: "server error",
+      message: error.message,
+      code: error.code,
+      detail: error.detail,
+    });
+
+
   } finally {
     client.release();
   }

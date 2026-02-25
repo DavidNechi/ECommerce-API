@@ -1,37 +1,17 @@
 import { Routes, Route, Link, useParams } from 'react-router-dom'
 import './App.css'
+import LoginPage from './pages/LoginPage'
+import RegisterPage from './pages/RegisterPage'
+import ProfilePage from './pages/ProfilePage'
+import ProductsPage from './pages/ProductsPage'
+import ProductDetails from './pages/ProductDetails'
+import CartPage from './pages/CartPage'
+import CheckoutPage from './pages/CheckoutPage'
+import OrdersPage from './pages/OrdersPage'
+
 
 function Home() {
   return <h2>Home Page</h2>
-}
-
-function Products() {
-  return <h2>Products Page</h2>
-}
-
-function ProductDescription() {
-  const { id } = useParams();
-  return <h2>Product {id}</h2>
-}
-
-function Cart() {
-  return <h2>Cart Page</h2>
-}
-
-function Checkout() {
-  return <h2>Checkout Page</h2>
-}
-
-function Login() {
-  return <h2>Login Page</h2>
-}
-
-function Register() {
-  return <h2>Register Page</h2>
-}
-
-function Orders() {
-  return <h2>Orders Page</h2>
 }
 
 function NotFound() {
@@ -47,6 +27,8 @@ function App() {
           <Link to="/login">Login</Link>
           <Link to="/register">Register</Link>
           <Link to="/orders">Orders</Link>
+          <Link to="/profile">Profile</Link>
+          <Link to="/cart">Cart</Link>
         </header>
 
         <aside className='filters'>
@@ -57,16 +39,17 @@ function App() {
 
         <main className='content'>
           <Routes>
-        <Route path="/" element={<Home />} />
-        <Route path="/products" element={<Products />} />
-        <Route path="/products/:id" element={<ProductDescription />} />
-        <Route path="/cart" element={<Cart />} />
-        <Route path="/checkout" element={<Checkout />} />
-        <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
-        <Route path="/orders" element={<Orders />} />
-        <Route path="*" element={<NotFound />} />
-      </Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/products" element={<ProductsPage />} />
+            <Route path="/products/:id" element={<ProductDetails />} />
+            <Route path="/cart" element={<CartPage />} />
+            <Route path="/checkout" element={<CheckoutPage />} />
+            <Route path="/login" element={<LoginPage />} />
+            <Route path="/register" element={<RegisterPage />} />
+            <Route path="/orders" element={<OrdersPage />} />
+            <Route path="/profile" element={<ProfilePage />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
         </main>
       </div>
     </>

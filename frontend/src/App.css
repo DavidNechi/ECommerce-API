@@ -18,7 +18,7 @@ body {
   display: grid;
   grid-template-rows: 72px 1fr;
   grid-template-columns: 260px 1fr;
-  grid-template-areas: 
+  grid-template-areas:
     "navbar navbar"
     "filters content";
 }
@@ -46,7 +46,8 @@ body {
   background: #f7f7f7;
 }
 
-.filters h3, p {
+.filters h3,
+p {
   text-decoration: none;
   color: #222;
   font-weight: 600;
@@ -56,5 +57,91 @@ body {
   grid-area: content;
   padding: 24px;
   background: #ddd;
+}
+
+.auth-card {
+  
+}
+
+.auth-card input {
+  background-color: #ddd;
+}
+
+.product-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.product-card {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 14px;
+  background: #fff;
+}
+
+.product-card h3 {
+  margin: 0 0 8px;
+  font-size: 1rem;
+  color: #222;
+}
+
+.product-card p {
+  margin: 4px 0;
+  color: #555;
+  font-size: 0.95rem;
+}
+
+.cart-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.cart-item-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.cart-col {
+  display: flex;
+  align-items: center;
+}
+
+.cart-product {
+  flex: 2;
+  flex-direction: column;
+  align-items: flex-start;
+  color: #222;
+}
+
+.cart-qty {
+  flex: 1;
+  justify-content: center;
+  gap: 8px;
+}
+
+.cart-qty span {
+  font-size: 0.95rem;
+  color: #555;
+}
+
+.cart-total {
+  flex: 1;
+  color: #222;
+  justify-content: flex-end;
+  font-weight: 600;
+}
+
+.cart-action {
+  flex: 0 0 auto;
+  justify-content: flex-end;
 }
 
