@@ -1,27 +1,35 @@
-import '../App.css'
+import '../App.css';
 
-function OrderItem({ order, orderItems }) {
-    return (
-        <article className="order-item-row">
+function OrderItem({ order }) {
+  return (
+    <article className="order-item-row">
+      <div className="status">
+        <p>Order #{order.id} | Status: {order.status}</p>
+        <p>Total: ${Number(order.total_amount).toFixed(2)}</p>
+      </div>
+
+      {order.items?.length ? (
+        order.items.map((item) => (
+          <div key={`${order.id}-${item.product_id}`} className="order-line">
             <div className="order-col order-product">
-                <h3>{order.name}</h3>
-                <p>Unit: ${Number(orderItems.unit_price).toFixed(2)}</p>
+              <h3>{item.name}</h3>
+              <p>Unit: ${Number(item.unit_price).toFixed(2)}</p>
             </div>
 
             <div className="order-col order-qty">
-                <span>{orderItems.quantity}</span>
-            </div>
-
-            <div className='status'>
-                <p>Status: {order.status}</p>
+              <span>Quantity: {item.quantity}</span>
             </div>
 
             <div className="order-col order-total">
-                ${Number(orderItems.quantity * orderItems.unit_price).toFixed(2)}
+              ${Number(item.quantity * item.unit_price).toFixed(2)}
             </div>
-        </article>
-
-    )
+          </div>
+        ))
+      ) : (
+        <p>No items in this order.</p>
+      )}
+    </article>
+  );
 }
 
 export default OrderItem;

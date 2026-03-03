@@ -1,166 +1,144 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import CartItem from '../components/CartItem'
+import { api } from '../lib/api'
+import { useAuth } from '../context/AuthContext'
 import '../App.css'
 
 function CartPage() {
   const navigate = useNavigate()
-  const [user, setUser] = useState(null)
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const { user, loading: authLoading } = useAuth();
 
   useEffect(() => {
-    const loadUser = async () => {
+    if (authLoading) return;
+
+    if (!user) {
+      navigate('/login');
+      return;
+    }
+
+    const loadCart = async () => {
+      setError('');
       try {
-        const res = await fetch('http://localhost:4001/auth/me', {
-          method: 'GET',
-          credentials: 'include',
-        })
-
-        if (!res.ok) {
-          navigate('/login')
-          return
-        }
-
-        const data = await res.json()
-        setUser(data)
-
-        const itemsResult = await fetch(`http://localhost:4001/carts/${data.id}`, {
-          credentials: 'include',
-        })
-
-        if (itemsResult.status === 404) {
-          setItems([])
-          return
-        }
-
-        if (!itemsResult.ok) {
-          throw new Error('Failed to load cart')
-        }
-        const cartData = await itemsResult.json()
-        setItems(cartData.items || [])
-
+        const cartData = await api.get(`/carts/${user.id}`);
+        setItems(cartData.items || []);
       } catch (err) {
-        setError('Failed to load session');
+        if (err.status === 404) {
+          setItems([]);
+        } else if (err.status === 401) {
+          navigate('/login');
+        } else {
+          setError(err.message || 'Failed to load cart');
+        }
       } finally {
         setLoading(false);
       }
-    }
+    };
 
-    loadUser()
-  }, [navigate])
+    loadCart();
+  }, [authLoading, user, navigate]);
 
   const handleRemove = async (item) => {
-    const res = await fetch(
-      `http://localhost:4001/carts/${user.id}/items/${item.product_id}`,
-      {
-        method: 'DELETE',
-        credentials: 'include',
-      }
-    )
-
-    if (!res.ok) {
-      setError('Failed to remove item')
-      return
+    setError('');
+    try {
+      await api.delete(`/carts/${user.id}/items/${item.product_id}`);
+      setItems((prev) => prev.filter((i) => i.product_id !== item.product_id));
+    } catch (err) {
+      setError(err.message || 'Failed to remove item');
     }
-
-    setItems((prev) => prev.filter((i) => i.product_id !== item.product_id))
-  }
+  };
 
   const handleIncrease = async (item) => {
-    const res = await fetch(`http://localhost:4001/carts/${user.id}/items/${item.product_id}`,
-      {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quantity: item.quantity + 1 }),
-      }
-    )
-
-    if (!res.ok) {
-      setError('Failed to increment item');
-      return
-    }
-
-    setItems((prev) =>
-      prev.map((i) =>
-        i.product_id === item.product_id
-          ? { 
-            ...i, 
-            quantity: i.quantity + 1, 
-            line_total: (i.quantity + 1) * i.unit_price
-           }
-          : i
+    setError('');
+    try {
+      await api.put(`/carts/${user.id}/items/${item.product_id}`,
+        {
+          quantity: item.quantity + 1
+        }
       )
-    )
+      setItems((prev) =>
+        prev.map((i) =>
+          i.product_id === item.product_id
+            ? {
+              ...i,
+              quantity: i.quantity + 1,
+              line_total: (i.quantity + 1) * i.unit_price
+            }
+            : i
+        )
+      )
+    } catch (err) {
+      setError(err.message || 'Failed to increase item quantity');
+    }
   }
-  
+
   const handleDecrease = async (item) => {
+    setError('');
     if (item.quantity === 1) {
-      handleRemove(item)
-      return
+      await handleRemove(item);
+      return;
     }
 
-    const res = await fetch(`http://localhost:4001/carts/${user.id}/items/${item.product_id}`,
-      {
-        method: 'PUT',
-        credentials: 'include',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ quantity: item.quantity - 1 }),
-      }
-    )
-
-    if (!res.ok) {
-      setError('Failed to decrement item');
-      return
-    }
-
-    setItems((prev) =>
-      prev.map((i) =>
-        i.product_id === item.product_id
-          ? { 
-            ...i, 
-            quantity: i.quantity - 1, 
-            line_total: (i.quantity - 1) * i.unit_price
-           }
-          : i
+    try {
+      await api.put(`/carts/${user.id}/items/${item.product_id}`,
+        {
+          quantity: item.quantity - 1
+        }
       )
-    )
+      setItems((prev) =>
+        prev.map((i) =>
+          i.product_id === item.product_id
+            ? {
+              ...i,
+              quantity: i.quantity - 1,
+              line_total: (i.quantity - 1) * i.unit_price
+            }
+            : i
+        )
+      )
+    } catch (err) {
+      setError(err.message || 'Failed to decrease item quantity');
+    }
   }
-
 
   if (loading) return <p>Loading cart...</p>
   if (error) return <p>{error}</p>
 
   return (
-    <section>
-      <h2>Cart</h2>
-      <p>Logged in as: {user?.email}</p>
+    <section className="page page--cart">
+      <header className="cart__header">
+        <h2 className="cart__title">Cart</h2>
+        <p className="cart__user">Logged in as: {user?.email}</p>
+      </header>
 
       {items.length === 0 ? (
-        <p>Your cart is empty.</p>
+        <p className="cart__empty is-empty">Your cart is empty.</p>
       ) : (
-        <div className="cart-container">
-          <div className="cart-list">
+        <div className="cart__content">
+          <div className="cart__list">
             {items.map((item) => (
-              <CartItem key={item.product_id} item={item} onIncrease={handleIncrease} onDecrease={handleDecrease} onRemove={handleRemove} />
+              <CartItem
+                key={item.product_id}
+                item={item}
+                onIncrease={handleIncrease}
+                onDecrease={handleDecrease}
+                onRemove={handleRemove}
+              />
             ))}
           </div>
 
-          <div className="cart-actions">
-            <button
-              onClick={() => navigate('/checkout', { state: { items, user } })}
-            >
+          <div className="cart__actions">
+            <button onClick={() => navigate('/checkout', { state: { items, user } })}>
               Proceed to Checkout
             </button>
           </div>
         </div>
       )}
-
-
     </section>
-  )
+  );
 }
 
 export default CartPage

@@ -1,5 +1,6 @@
 import { useNavigate } from 'react-router-dom'
 import '../App.css'
+import { api } from '../lib/api';
 
 function Register() {
   const navigate = useNavigate();
@@ -14,47 +15,65 @@ function Register() {
       password: data.get('password'),
     }
 
-    const res = await fetch('http://localhost:4001/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-
-    if (res.ok) {
-      const result = await res.json();
-      localStorage.setItem('user', JSON.stringify(result));
+    try {
+      await api.post('/auth/register', payload);
       navigate('/login');
-      return;
+    } catch (err) {
+      console.error(err.message || 'Registration failed');
     }
-
-    const result = await res.json();
-    console.log(result);
   }
 
   return (
-    <div className='auth-card'>
-      <section>
-        <form className='form' onSubmit={handleSubmit}>
-          <h2>Welcome to ECommerce</h2>
-          <p>Enter information to create an account</p>
+    <section className="page page--register">
+      <div className="auth-card auth-card--register">
+        <header className="auth-card__header">
+          <h2 className="auth-card__title">Welcome to ECommerce</h2>
+          <p className="auth-card__subtitle">Enter information to create an account</p>
+        </header>
 
-          <div className='inputWrapper'>
-            <input id='name' name='name' type='text' placeholder="Enter your name" required />
+        <form className="auth-card__form" onSubmit={handleSubmit}>
+          <div className="auth-card__field">
+            <input
+              className="auth-card__input"
+              id="name"
+              name="name"
+              type="text"
+              placeholder="Enter your name"
+              required
+            />
           </div>
 
-          <div className='inputWrapper'>
-            <input id="email" name="email" type="email" placeholder="Enter your email" required />
+          <div className="auth-card__field">
+            <input
+              className="auth-card__input"
+              id="email"
+              name="email"
+              type="email"
+              placeholder="Enter your email"
+              required
+            />
           </div>
 
-          <div className='inputWrapper'>
-            <input id="password" name="password" type="password" placeholder="Enter your password" required minLength={8} />
+          <div className="auth-card__field">
+            <input
+              className="auth-card__input"
+              id="password"
+              name="password"
+              type="password"
+              placeholder="Enter your password"
+              required
+              minLength={8}
+            />
           </div>
 
-          <button type="submit">Register</button>
+          <button className="auth-card__submit" type="submit">
+            Register
+          </button>
         </form>
-      </section>
-    </div>
-  )
+      </div>
+    </section>
+  );
+
 }
 
 export default Register;

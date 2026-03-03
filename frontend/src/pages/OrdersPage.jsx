@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useState } from 'react'
 import OrderItem from '../components/OrderItem'
 import '../App.css'
+import { api } from '../lib/api'
 
 function OrdersPage() {
     const navigate = useNavigate();
@@ -15,52 +16,22 @@ function OrdersPage() {
         const loadUser = async () => {
             try {
                 // Load and check user session
-                const userRes = await fetch('http://localhost:4001/auth/me', {
-                    method: 'GET',
-                    credentials: 'include',
-                });
-
-                if (!userRes.ok) {
-                    navigate('/login');
-                    return;
-                }
-
-                const userData = await userRes.json();
-                setUser(userData);
+                const currentUser = await api.get('/auth/me');
+                setUser(currentUser);
 
                 // Load and check orders
-
-                const ordersRes = await fetch(`http://localhost:4001/orders/users/${userData.id}`, {
-                    method: 'GET',
-                    credentials: 'include',
-                });
-
-                if (!ordersRes.ok) {
-                    setError('Failed to load orders. Please try again later.');
-                    return;
-                }
-
-                const ordersData = await ordersRes.json();
-                setOrders(ordersData);
-
+                const ordersData = await api.get(`/orders/users/${currentUser.id}`);
 
                 // Load and check order items for order
-
-                const orderItemsData = await fetch(`http://localhost:4001/orders/${order.id}`, {
-                    method: 'GET',
-                    credentials: 'include',
-                });
-
-                if (!orderItemsData.ok) {
-                    setError('Failed to load order items. Please try again later.');
-                    return;
-                }
-
-                const orderItemsDataJson = await orderItemsData.json();
-                setOrderItems(orderItemsDataJson);
+                const detailedOrders = await Promise.all(
+                    ordersData.map(async (order) => {
+                        const detailData = await api.get(`/orders/${order.id}`);
+                        return { ...order, items: detailData.items || [] };
+                    })
+                );
+                setOrders(detailedOrders);
             } catch (err) {
-                setError('Failed to verify session. Please log in again.');
-                navigate('/login');
+                setError(err.message || 'Failed to verify session. Please log in again.');
             } finally {
                 setLoading(false);
             }
@@ -69,25 +40,31 @@ function OrdersPage() {
         loadUser();
     }, [navigate]);
 
-    if (loading) return <p>Loading cart...</p>
+    if (loading) return <p>Loading orders...</p>
     if (error) return <p>{error}</p>
 
 
 
     return (
-        <div className="orders-page">
-            <h1>My Orders</h1>
-            <div className="orders-list">
+        <section className="page page--orders">
+            <header className="orders__header">
+                <h1 className="orders__title">My Orders</h1>
+            </header>
+
+            <div className="orders__content">
                 {orders.length === 0 ? (
-                    <p>You have no orders yet.</p>
+                    <p className="orders__empty is-empty">You have no orders yet.</p>
                 ) : (
-                    orders.map(order => (
-                        <OrderItem key={order.id} order={order} orderItems={orderItems} />
-                    ))
+                    <div className="orders__list">
+                        {orders.map((order) => (
+                            <OrderItem key={order.id} order={order} />
+                        ))}
+                    </div>
                 )}
             </div>
-        </div>
-    )
+        </section>
+    );
+
 }
 
 export default OrdersPage;

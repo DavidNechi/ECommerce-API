@@ -1,54 +1,66 @@
 import { useNavigate } from 'react-router-dom'
+import { useAuth } from '../context/AuthContext'
 import '../App.css'
 
 function Login() {
   const navigate = useNavigate();
+  const { login } = useAuth();
 
   const handleSubmit = async (e) => {
-    e.preventDefault()
-
+    e.preventDefault();
     const data = new FormData(e.target);
-    const payload = {
-      email: data.get('email'),
-      password: data.get('password'),
-    }
 
-    const res = await fetch('http://localhost:4001/auth/login', {
-      credentials: 'include',
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-
-    if (res.ok) {
+    try {
+      await login({
+        email: data.get('email'),
+        password: data.get('password'),
+      });
       navigate('/products');
-      return;
+    } catch (err) {
+      console.log(err.message);
     }
-
-    const result = await res.json();
-    console.log(result);
-  }
+  };
 
   return (
-    <div className='auth-card'>
-      <section>
-        <form className='form' onSubmit={handleSubmit}>
-          <h2>Welcome to ECommerce</h2>
-          <p>Enter information to login into an account</p>
+    <section className="page page--login">
+      <div className="auth-card auth-card--login">
+        <header className="auth-card__header">
+          <h2 className="auth-card__title">Welcome to ECommerce</h2>
+          <p className="auth-card__subtitle">Enter information to login into an account</p>
+        </header>
 
-          <div className='inputWrapper'>
-            <input id="email" name="email" type="email" placeholder="Enter your email" required />
+        <form className="auth-card__form" onSubmit={handleSubmit}>
+          <div className="auth-card__field">
+            <input
+              className="auth-card__input"
+              id="email"
+              name="email"
+              type="email"
+              placeholder="Enter your email"
+              required
+            />
           </div>
 
-          <div className='inputWrapper'>
-            <input id="password" name="password" type="password" placeholder="Enter your password" required minLength={8} />
+          <div className="auth-card__field">
+            <input
+              className="auth-card__input"
+              id="password"
+              name="password"
+              type="password"
+              placeholder="Enter your password"
+              required
+              minLength={8}
+            />
           </div>
 
-          <button type="submit">Login</button>
+          <button className="auth-card__submit" type="submit">
+            Login
+          </button>
         </form>
-      </section>
-    </div>
-  )
+      </div>
+    </section>
+  );
+
 }
 
 export default Login;

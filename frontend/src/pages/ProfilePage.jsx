@@ -1,60 +1,47 @@
 import { useNavigate } from 'react-router-dom'
-import { useState } from 'react'
+import { useAuth } from '../context/AuthContext'
 import '../App.css'
-import { useEffect } from 'react';
-
-const authMe = async () => {
-  const res = await fetch('http://localhost:4001/auth/me', {
-    method: 'GET',
-    credentials: 'include',
-  });
-  return res;
-}
-
-const logoutUser = async () => {
-  const res = await fetch('http://localhost:4001/auth/logout', {
-    method: 'POST',
-    credentials: 'include',
-  })
-  return res
-}
 
 function Profile() {
   const navigate = useNavigate();
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const loadProfile = async () => {
-      const res = await authMe();
-      if (!res.ok) {
-        navigate('/login');
-        return;
-      }
-
-      const data = await res.json();
-      setUser(data);
-      setLoading(false);
-    }
-
-    loadProfile();
-  }, [navigate])
+  const { user, loading, logout } = useAuth();
 
   const handleLogout = async () => {
-    await logoutUser();
-    navigate('/login');
+    try {
+      await logout();
+      navigate('/login');
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
   }
 
-  if (loading) return <p>Loading rofile...</p>
+  if (loading) return <p>Loading profile...</p>
 
   return (
-    <div className="auth-card">
-      <h2>Profile</h2>
-      <p>Name: {user?.name}</p>
-      <p>Email: {user?.email}</p>
-      <button onClick={handleLogout}>Logout</button>
-    </div>
-  )
+    <section className="page page--profile">
+      <div className="profile-card">
+        <header className="profile-card__header">
+          <h2 className="profile-card__title">Profile</h2>
+        </header>
+
+        <div className="profile-card__content">
+          <p className="profile-card__row">
+            <span className="profile-card__label">Name:</span> {user?.name}
+          </p>
+          <p className="profile-card__row">
+            <span className="profile-card__label">Email:</span> {user?.email}
+          </p>
+        </div>
+
+        <div className="profile-card__actions">
+          <button className="profile-card__logout" onClick={handleLogout}>
+            Logout
+          </button>
+        </div>
+      </div>
+    </section>
+  );
+
 }
 
 export default Profile;

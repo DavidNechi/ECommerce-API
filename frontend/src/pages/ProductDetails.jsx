@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useParams } from 'react-router-dom'
+import { api } from '../lib/api'
 import '../App.css'
 
 function ProductDetails() {
@@ -11,12 +12,7 @@ function ProductDetails() {
     useEffect(() => {
         const fetchProduct = async () => {
             try {
-                const res = await fetch(`http://localhost:4001/products/${id}`);
-                if (!res.ok) {
-                    throw new Error('Product not found.');
-                }
-
-                const data = await res.json();
+                const data = await api.get(`/products/${id}`);
                 setProduct(data);
             } catch (error) {
                 setError(error.message || 'Failed to load product.');
@@ -33,13 +29,25 @@ function ProductDetails() {
     if (!product) return <p>Product not found.</p>
 
     return (
-        <section className='product-card'>
-            <h3>{product.name}</h3>
-            <p>Price: ${Number(product.price).toFixed(2)}</p>
-            <p>Stock: {product.stock_quantity}</p>
-            <p>Product ID: {product.id}</p>
+        <section className="page page--product-details">
+            <article className="product-details">
+                <h2 className="product-details__title">{product.name}</h2>
+
+                <div className="product-details__meta">
+                    <p className="product-details__price">
+                        Price: ${Number(product.price).toFixed(2)}
+                    </p>
+                    <p className="product-details__stock">
+                        Stock: {product.stock_quantity}
+                    </p>
+                    <p className="product-details__id">
+                        Product ID: {product.id}
+                    </p>
+                </div>
+            </article>
         </section>
-    )
+    );
+
 }
 
 export default ProductDetails;
