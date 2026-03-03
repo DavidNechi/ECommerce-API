@@ -36,47 +36,49 @@ router.post("/:userId", isAuthenticated, requireSameUser("userId"), async (req, 
     let totalAmount = 0;
 
     for (const item of itemsResult.rows) {
-      const productResult = await client.query("SELECT stock_quantity FROM products WHERE id = $1", [
-        item.product_id,
-      ]);
-
-      if (productResult.rows.length === 0) {
+      const quantity = Number(item.quantity);
+      if (!Number.isInteger(quantity) || quantity <= 0) {
         await client.query("ROLLBACK");
-        return res.status(404).json({ error: `product ${item.product_id} not found` });
+        return res.status(400).json({ error: "invalid quantity in cart" });
       }
 
-      const stock = productResult.rows[0].stock_quantity;
-      if (stock < item.quantity) {
-        await client.query("ROLLBACK");
-        return res.status(400).json({ error: `insufficient stock for product ${item.product_id}` });
-      }
-
-      totalAmount += Number(item.unit_price) * Number(item.quantity);
+      totalAmount += Number(item.unit_price) * quantity;
     }
 
     const orderResult = await client.query(
       `INSERT INTO orders (user_id, status, total_amount)
-       VALUES ($1, $2, $3)
-       RETURNING id, user_id, status, total_amount, created_at`,
+      VALUES ($1, $2, $3)
+      RETURNING id, user_id, status, total_amount, created_at`,
       [userId, "placed", totalAmount]
     );
 
     const order = orderResult.rows[0];
 
+
+
     for (const item of itemsResult.rows) {
-      await client.query(
-        `INSERT INTO order_products (order_id, product_id, quantity, unit_price)
-         VALUES ($1, $2, $3, $4)`,
-        [order.id, item.product_id, item.quantity, item.unit_price]
+      const quantity = Number(item.quantity);
+
+      const stockUpdateResult = await client.query(
+        `UPDATE products
+        SET stock_quantity = stock_quantity - $1
+        WHERE id = $2 AND stock_quantity >= $1
+        RETURNING id`,
+        [quantity, item.product_id]
       );
 
+      if (stockUpdateResult.rows.length === 0) {
+        await client.query("ROLLBACK");
+        return res.status(400).json({ error: `insufficient stock for product ${item.product_id}` });
+      }
+
       await client.query(
-        `UPDATE products
-         SET stock_quantity = stock_quantity - $1
-         WHERE id = $2`,
-        [item.quantity, item.product_id]
+        `INSERT INTO order_products (order_id, product_id, quantity, unit_price)
+        VALUES ($1, $2, $3, $4)`,
+        [order.id, item.product_id, quantity, item.unit_price]
       );
     }
+
 
     await client.query("DELETE FROM cart_products WHERE cart_id = $1", [cartId]);
 
@@ -89,7 +91,7 @@ router.post("/:userId", isAuthenticated, requireSameUser("userId"), async (req, 
   } catch (error) {
     try {
       await client.query("ROLLBACK");
-    } catch (_) {}
+    } catch (_) { }
     console.error("checkout error:", error);
     return res.status(500).json({
       error: "server error",

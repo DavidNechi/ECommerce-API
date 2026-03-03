@@ -8,7 +8,12 @@ function ProductsPage() {
   const [products, setProducts] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
   const navigate = useNavigate();
+
+  const filteredProducts = (products || []).filter((product) =>
+    product.name.toLowerCase().includes(search.toLowerCase())
+  );
 
   useEffect(() => {
     const fetchProducts = async () => {
@@ -43,15 +48,29 @@ function ProductsPage() {
 
   return (
     <section className="page page--products">
-      <header className="products__header">
-        <h2 className="products__title">Products</h2>
-      </header>
+      <aside className="products__filters" aria-label="Filters">
+        <h3 className="products__filters-title">Search</h3>
+        <input
+          className="products__search-input"
+          type="text"
+          placeholder="Search products..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+        />
+      </aside>
 
-      <div className="products__content">
-        <ProductList products={products} onAddToCart={handleAddToCart} />
+      <div className="products__main">
+        <header className="products__header">
+          <h2 className="products__title">Products</h2>
+        </header>
+
+        <div className="products__content">
+          <ProductList products={filteredProducts} onAddToCart={handleAddToCart} />
+        </div>
       </div>
     </section>
   );
+
 }
 
 export default ProductsPage;
