@@ -3,7 +3,7 @@
 Full-stack e-commerce application with:
 
 - `backend`: Express + PostgreSQL + Passport session auth + Stripe payment intent flow
-- `frontend`: React + Vite + Tailwind-based styling (`@apply` in `App.css`)
+- `frontend`: React + Vite + Tailwind-based styling 
 
 ## What Is Implemented
 
